@@ -1,0 +1,14 @@
+# Ignora pastas e arquivos comuns de sistemas operacionais
+.DS_Store
+.env
+
+# Python/Backend
+__pycache__/
+*.pyc
+.venv/
+# O seu ambiente virtual é o .venv, ele deve ser ignorado.
+
+# Node/Frontend
+node_modules/
+dist/
+npm-debug.log*
