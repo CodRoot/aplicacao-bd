@@ -2,6 +2,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
 from models import DepositoRequest, RetiradaRequest, OrdemRequest
 from db import fetch_all, fetch_one, call_procedure
+from pydantic import BaseModel
 
 app = FastAPI(title="Plataforma de Investimentos - API")
 
@@ -285,3 +286,97 @@ def relatorio_desempenho(cpf_cliente: str, inicio: str, fim: str):
             for row in historico
         ],
     }
+
+
+
+
+
+class SimulacaoRequest(BaseModel):
+    ticker: str
+    valor_inicial: float
+    meses: int
+
+
+@app.post("/simulacao")
+def simular_rendimento(dados: SimulacaoRequest):
+    # 1. Buscar a rentabilidade diária do ativo no banco
+    ativo = fetch_one("SELECT Rent_diaria_fixa FROM Ativo WHERE Ticker = %s", (dados.ticker,))
+
+    if not ativo:
+        raise HTTPException(status_code=404, detail="Ativo não encontrado")
+
+    taxa_diaria = ativo["rent_diaria_fixa"]
+
+    if taxa_diaria is None:
+        raise HTTPException(status_code=400, detail="Este ativo não tem rentabilidade fixa definida para simulação.")
+
+    # 2. Cálculo de Juros Compostos
+    # Considerando média de 21 dias úteis por mês
+    dias_totais = dados.meses * 21
+    valor_final = dados.valor_inicial * ((1 + float(taxa_diaria)) ** dias_totais)
+
+    return {
+        "ticker": dados.ticker,
+        "valor_inicial": dados.valor_inicial,
+        "meses": dados.meses,
+        "valor_final_estimado": round(valor_final, 2),
+        "rentabilidade_total_percentual": round(((valor_final - dados.valor_inicial) / dados.valor_inicial) * 100, 2)
+    }
+
+# =========================
+#   ÁREA DO ASSESSOR
+# =========================
+
+@app.get("/assessor/{cpf_assessor}/clientes")
+def listar_carteira_clientes(cpf_assessor: str):
+    """
+    Retorna a lista de clientes atendidos por um assessor,
+    incluindo saldo e patrimônio total de cada um.
+    (Baseado na Consulta 10 do SQL)
+    """
+    query = """
+        SELECT
+            cli.CPF                                     AS cpf_cliente,
+            pcli.Primeiro_Nome || ' ' || pcli.Sobrenome AS nome_cliente,
+            c.ID_conta,
+            c.Saldo_disponivel,
+            COALESCE(SUM(pc.Quantidade * a.Preco_atual),0) AS valor_investido,
+            c.Saldo_disponivel + COALESCE(SUM(pc.Quantidade * a.Preco_atual),0) AS patrimonio_total
+        FROM Assessor ass
+        JOIN Cliente  cli  ON cli.CPF_Assessor = ass.CPF
+        JOIN Pessoa   pcli ON pcli.CPF       = cli.CPF
+        JOIN Conta    c    ON c.CPF_cliente  = cli.CPF
+        LEFT JOIN Posicao_Carteira pc ON pc.ID_conta = c.ID_conta
+        LEFT JOIN Ativo a            ON a.Ticker    = pc.Ticker
+        WHERE ass.CPF = %s
+        GROUP BY cli.CPF, pcli.Primeiro_Nome, pcli.Sobrenome, c.ID_conta, c.Saldo_disponivel
+        ORDER BY nome_cliente;
+    """
+    return fetch_all(query, (cpf_assessor,))
+
+
+# =========================
+#   ÁREA DO GERENTE
+# =========================
+
+@app.get("/gerente/{cpf_gerente}/equipe")
+def listar_equipe_gerente(cpf_gerente: str):
+    """
+    Retorna a hierarquia: Gerente -> Assessores -> Clientes.
+    (Baseado na Consulta 11 do SQL)
+    """
+    query = """
+        SELECT
+            ass.CPF                                   AS cpf_assessor,
+            pa.Primeiro_Nome || ' ' || pa.Sobrenome   AS nome_assessor,
+            cli.CPF                                   AS cpf_cliente,
+            pc.Primeiro_Nome || ' ' || pc.Sobrenome   AS nome_cliente
+        FROM Gerente g
+        JOIN Assessor ass ON ass.CPF_Gerente = g.CPF
+        JOIN Pessoa   pa  ON pa.CPF         = ass.CPF
+        JOIN Cliente  cli ON cli.CPF_Assessor = ass.CPF
+        JOIN Pessoa   pc  ON pc.CPF         = cli.CPF
+        WHERE g.CPF = %s
+        ORDER BY nome_assessor, nome_cliente;
+    """
+    return fetch_all(query, (cpf_gerente,))
