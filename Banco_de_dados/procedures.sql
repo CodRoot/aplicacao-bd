@@ -148,14 +148,22 @@ BEGIN
         RAISE EXCEPTION 'Quantidade deve ser positiva';
     END IF;
 
+    -- BUSCA QUANTIDADE ATUAL (COM TRATAMENTO PARA NULO)
     SELECT Quantidade INTO v_qtd_atual
     FROM Posicao_Carteira
     WHERE ID_conta = p_id_conta AND Ticker = p_ticker;
 
-    IF v_qtd_atual < p_quantidade THEN
-        RAISE EXCEPTION 'Quantidade insuficiente para venda';
+    -- Se não encontrou registro, define como 0
+    IF v_qtd_atual IS NULL THEN
+        v_qtd_atual := 0;
     END IF;
 
+    -- VALIDAÇÃO
+    IF v_qtd_atual < p_quantidade THEN
+        RAISE EXCEPTION 'Quantidade insuficiente para venda. Você possui % unidades.', v_qtd_atual;
+    END IF;
+
+    -- BUSCA PREÇO
     SELECT Preco_atual INTO v_preco
     FROM Ativo WHERE Ticker = p_ticker;
 
@@ -171,13 +179,19 @@ BEGIN
     WHERE ID_conta = p_id_conta;
 
     -- ATUALIZA POSIÇÃO
-    UPDATE Posicao_Carteira
-    SET Quantidade = v_qtd_atual - p_quantidade
-    WHERE ID_conta = p_id_conta AND Ticker = p_ticker;
+    IF v_qtd_atual - p_quantidade = 0 THEN
+        -- Se vendeu tudo, remove o registro da carteira para limpar
+        DELETE FROM Posicao_Carteira
+        WHERE ID_conta = p_id_conta AND Ticker = p_ticker;
+    ELSE
+        -- Se sobrou, apenas desconta
+        UPDATE Posicao_Carteira
+        SET Quantidade = v_qtd_atual - p_quantidade
+        WHERE ID_conta = p_id_conta AND Ticker = p_ticker;
+    END IF;
 
 END;
 $$;
-
 
 -- ============================================================
 -- 5) PROCEDURE - RENDIMENTO DIÁRIO AUTOMÁTICO

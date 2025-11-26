@@ -26,6 +26,20 @@ app.add_middleware(
 #   ROTAS DE CONTA / SALDO
 # =========================
 
+
+@app.get("/clientes/{cpf}/conta")
+def get_conta_por_cpf(cpf: str):
+    """
+    Retorna o ID da conta associado a um CPF de cliente.
+    """
+    query = "SELECT ID_conta FROM Conta WHERE CPF_cliente = %s"
+    row = fetch_one(query, (cpf,))
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Conta não encontrada para este CPF")
+
+    return {"id_conta": row["id_conta"]}
+
 @app.get("/contas/{id_conta}/resumo")
 def get_conta_resumo(id_conta: int):
     row = fetch_one(
@@ -380,3 +394,20 @@ def listar_equipe_gerente(cpf_gerente: str):
         ORDER BY nome_assessor, nome_cliente;
     """
     return fetch_all(query, (cpf_gerente,))
+
+# =========================
+#   ADMINISTRAÇÃO / TEMPO
+# =========================
+
+@app.post("/admin/virar-dia")
+def virar_dia():
+    """
+    Simula a passagem de um dia: aplica a rentabilidade diária
+    em todos os ativos que possuem taxa definida.
+    """
+    try:
+        call_procedure("sp_aplica_rendimento_diario")
+        return {"message": "Dia virado com sucesso! Rendimentos aplicados."}
+    except Exception as e:
+        print(f"ERRO: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

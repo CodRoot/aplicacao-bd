@@ -512,3 +512,10 @@ VALUES
 (23,23),
 (24,24),
 (25,25);
+
+/* =========================================================
+   CORREÇÃO DE SEQUÊNCIAS (AUTO-INCREMENTO)
+   Ajusta os contadores para não conflitarem com os IDs manuais
+   ========================================================= */
+SELECT setval(pg_get_serial_sequence('ordem', 'id_ordem'), (SELECT MAX(id_ordem) FROM ordem));
+SELECT setval(pg_get_serial_sequence('transacao_financeira', 'id_transacao'), (SELECT MAX(id_transacao) FROM transacao_financeira));
